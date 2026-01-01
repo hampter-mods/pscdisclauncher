@@ -18,6 +18,7 @@ need_bin() { command -v "$1" >/dev/null 2>&1 || { log "Missing required binary: 
 need_bin sqlite3
 need_bin rm
 need_bin cp
+need_bin mv
 need_bin ls
 need_bin head
 need_bin sed
@@ -27,8 +28,6 @@ if [ ! -f "${STATE_FILE}" ]; then
   exit 0
 fi
 
-# Robustly load state.conf even if it contains unexpected/unsafe lines.
-# We only accept simple KEY=VALUE assignments for known keys and INSTALLED_* flags.
 load_state() {
   file="$1"
 
@@ -37,61 +36,31 @@ load_state() {
   TITLE=""
   BASENAME=""
   CREATED_RA_MODULES_DIR="0"
-
-  # shellcheck disable=SC2034
   INSTALLED=0
 
-  # Read line-by-line to avoid executing arbitrary content.
   while IFS= read -r line || [ -n "$line" ]; do
-    # skip empty lines and comments
     [ -z "$line" ] && continue
-    case "$line" in
-      \#*) continue ;;
+    case "$line" in \#*) continue ;; esac
+
+    case "$line" in *=*)
+      key=${line%%=*}
+      val=${line#*=}
+      ;;
+    *) continue ;;
     esac
 
-    # Only allow KEY=VALUE format
-    case "$line" in
-      *=*)
-        key=${line%%=*}
-        val=${line#*=}
-        ;;
-      *)
-        continue
-        ;;
-    esac
-
-    # Trim whitespace around key
     key=$(printf "%s" "$key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-    # Trim leading/trailing whitespace for val (keep interior spaces)
     val=$(printf "%s" "$val" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 
-    # Accept only known keys and INSTALLED_* flags with safe key names
     case "$key" in
       INSTALLED|TIMESTAMP|GAME_ID|NODE_ID|TITLE|BASENAME|CREATED_RA_MODULES_DIR)
-        case "$key" in
-          INSTALLED) INSTALLED="$val" ;;
-          TIMESTAMP) TIMESTAMP="$val" ;;
-          GAME_ID) GAME_ID="$val" ;;
-          NODE_ID) NODE_ID="$val" ;;
-          TITLE) TITLE="$val" ;;
-          BASENAME) BASENAME="$val" ;;
-          CREATED_RA_MODULES_DIR) CREATED_RA_MODULES_DIR="$val" ;;
-        esac
+        eval "$key=\"\$val\""
         ;;
       INSTALLED_*)
-        # Only accept safe variable names (alnum + underscore)
         safe_key=$(printf "%s" "$key" | sed 's/[^A-Za-z0-9_]/_/g')
         if [ "$safe_key" = "$key" ]; then
-          case "$val" in
-            0|1)
-              # We do need eval here to assign a dynamic *safe* var name.
-              eval "${key}=${val}"
-              ;;
-          esac
+          case "$val" in 0|1) eval "$key=$val" ;; esac
         fi
-        ;;
-      *)
-        # ignore anything else
         ;;
     esac
   done < "$file"
@@ -102,38 +71,25 @@ load_state "${STATE_FILE}"
 TITLE="${TITLE:-PlayStation Format Disc}"
 BASENAME="${BASENAME:-drive2}"
 
-# Escape single quotes for SQL
 TITLE_SQL="$(printf "%s" "${TITLE}" | sed "s/'/''/g")"
 BASENAME_SQL="$(printf "%s" "${BASENAME}" | sed "s/'/''/g")"
 
-# 1) Restore backups if present (latest backup wins)
 restore_latest_backup() {
   base="$1"
   target="$2"
-  latest="$(ls -1t "${STATE_DIR}/${base}.bak."* 2>/dev/null | head -n 1)"
-  if [ -n "${latest}" ] && [ -f "${latest}" ]; then
-    cp -f "${latest}" "${target}"
-    log "Restored ${target} from ${latest}"
-  else
-    log "No backup found for ${target} (skipping restore)"
-  fi
+  latest="$(ls -1t "${STATE_DIR}/${base}.bak."* 2>/dev/null | head -n 1 || true)"
+  [ -f "$latest" ] && cp -f "$latest" "$target" && log "Restored ${target}"
 }
 
 restore_latest_backup "intercept" "${PE_ETC}/SUP/scripts/intercept"
 restore_latest_backup "0030_retroarch.funcs" "${PE_ETC}/FUNC/0030_retroarch.funcs"
 
-# 2) Remove optional extras ONLY if we installed them
-# NOTE: Installer writes flags like INSTALLED_modules_cdrom_ko=1 (sanitized).
 rm_if_installed() {
   rel="$1"
   dst="$2"
   safe_key="$(printf "%s" "$rel" | sed 's/[^A-Za-z0-9_]/_/g')"
-  key="INSTALLED_${safe_key}"
-  eval val="\${${key}:-0}"
-  if [ "${val}" = "1" ] && [ -f "${dst}" ]; then
-    rm -f "${dst}"
-    log "Removed ${dst}"
-  fi
+  eval val="\${INSTALLED_${safe_key}:-0}"
+  [ "$val" = "1" ] && [ -f "$dst" ] && rm -f "$dst" && log "Removed ${dst}"
 }
 
 rm_if_installed "modules/cdrom.ko" "${PE_OPT}/modules/cdrom.ko"
@@ -144,77 +100,69 @@ rm_if_installed "theme/ra_drive2_error.png" "${PE_ETC}/THEME/stock/menu_files/ra
 rm_if_installed "theme/ra_drive2_invalid_disc.png" "${PE_ETC}/THEME/stock/menu_files/ra_drive2_invalid_disc.png"
 rm_if_installed "config/ra-game-cdrom.cfg" "${PE_OPT}/config/retroarch/ra-game-cdrom.cfg"
 
-# Also remove per-core override if present
-DRIVE2_OPT="${PE_OPT}/config/retroarch/config/PCSX-ReARMed/drive2.opt"
-if [ -f "${DRIVE2_OPT}" ]; then
-  rm -f "${DRIVE2_OPT}"
-  log "Removed RetroArch override ${DRIVE2_OPT}"
-fi
+[ -f "${PE_OPT}/config/retroarch/config/PCSX-ReARMed/drive2.opt" ] && rm -f "${PE_OPT}/config/retroarch/config/PCSX-ReARMed/drive2.opt"
+[ -f "${PE_OPT}/saves/drive2.srm" ] && rm -f "${PE_OPT}/saves/drive2.srm"
 
-# Also remove save RAM if present (requested)
-DRIVE2_SRM="${PE_OPT}/saves/drive2.srm"
-if [ -f "${DRIVE2_SRM}" ]; then
-  rm -f "${DRIVE2_SRM}"
-  log "Removed RetroArch save ${DRIVE2_SRM}"
-fi
-
-# User-friendly cleanup: ALWAYS try to delete the RetroArch modules directory.
-# - If empty: delete it.
-# - If non-empty: delete it ONLY if it contains only our known module filenames.
 if [ -d "${PE_OPT}/modules" ]; then
-  if [ -z "$(ls -A "${PE_OPT}/modules" 2>/dev/null)" ]; then
-    rm -rf "${PE_OPT}/modules"
-    log "Removed RetroArch modules directory ${PE_OPT}/modules (empty)"
-  else
-    only_known=1
-    for p in "${PE_OPT}/modules/"*; do
-      [ -e "$p" ] || continue
-      b="$(basename "$p")"
-      case "$b" in
-        cdrom.ko|sg.ko|sr_mod.ko) ;;
-        *) only_known=0 ;;
-      esac
-    done
-
-    if [ "${only_known}" -eq 1 ]; then
-      rm -rf "${PE_OPT}/modules"
-      log "Removed RetroArch modules directory ${PE_OPT}/modules (contained only known mod files)"
-    else
-      log "RetroArch modules directory ${PE_OPT}/modules contains non-mod files; not removing."
-    fi
-  fi
+  only_known=1
+  for f in "${PE_OPT}/modules/"*; do
+    [ -e "$f" ] || continue
+    case "$(basename "$f")" in cdrom.ko|sg.ko|sr_mod.ko) ;; *) only_known=0 ;; esac
+  done
+  [ "$only_known" -eq 1 ] && rm -rf "${PE_OPT}/modules" && log "Removed RetroArch modules directory"
 fi
 
-# 3) Remove launcher folder (if it still looks like ours)
-if [ -n "${GAME_ID}" ] && [ -d "${PE_GAMES}/${GAME_ID}" ]; then
-  if [ -f "${PE_GAMES}/${GAME_ID}/drive2.cue" ] || [ -f "${PE_GAMES}/${GAME_ID}/drive2.bin" ]; then
-    rm -rf "${PE_GAMES}/${GAME_ID}"
-    log "Removed launcher folder ${PE_GAMES}/${GAME_ID}"
-  else
-    log "Game folder ${PE_GAMES}/${GAME_ID} doesn't look like drive2 launcher; not deleting."
-  fi
+if [ -n "$GAME_ID" ] && [ -d "${PE_GAMES}/${GAME_ID}" ]; then
+  rm -rf "${PE_GAMES:?}/${GAME_ID}"
+  log "Removed launcher folder ${GAME_ID}"
 fi
 
-# 4) Remove DB entries (scoped, schema-correct)
-# regional.db uses MENU_ENTRIES and DISC (DISC FK -> MENU_ENTRIES)
+# Remove regional entries
 sqlite3 "${DB_REGIONAL}" "DELETE FROM DISC WHERE BASENAME='${BASENAME_SQL}';"
 sqlite3 "${DB_REGIONAL}" "DELETE FROM MENU_ENTRIES WHERE GAME_TITLE_STRING='${TITLE_SQL}';"
 log "Removed regional.db entries"
 
-# BleemSync.db
-# Delete files tied to node first (FK cascade may already handle it, but be explicit)
-NODE_ID_BY_NAME="$(sqlite3 "${DB_BLEEM}" "SELECT Id FROM GameManagerNodes WHERE Name='${TITLE_SQL}' LIMIT 1;")"
-if [ -n "${NODE_ID_BY_NAME}" ]; then
-  sqlite3 "${DB_BLEEM}" "DELETE FROM GameManagerFiles WHERE NodeId=${NODE_ID_BY_NAME};"
-fi
+# Remove BleemSync entries robustly:
+# - by Name
+# - AND by drive2 file paths (handles title mismatch / stale nodes)
+NODE_IDS="$(sqlite3 "${DB_BLEEM}" "SELECT Id FROM GameManagerNodes WHERE Name='${TITLE_SQL}';")"
+for nid in $NODE_IDS; do
+  sqlite3 "${DB_BLEEM}" "DELETE FROM GameManagerFiles WHERE NodeId=${nid};"
+done
+sqlite3 "${DB_BLEEM}" "DELETE FROM GameManagerFiles WHERE Path LIKE '%/drive2.cue' OR Path LIKE '%/drive2.png' OR Path LIKE '%/Game.ini';"
 sqlite3 "${DB_BLEEM}" "DELETE FROM GameManagerNodes WHERE Name='${TITLE_SQL}';"
 log "Removed BleemSync.db entries"
 
-# 5) Cleanup state + backups by removing the entire mod state directory
-if [ -d "${STATE_DIR}" ]; then
-  rm -rf "${STATE_DIR}"
-  log "Removed mod state directory ${STATE_DIR} (state + backups)"
-fi
+# Rebuild menu ordering + folders
+TMP_IDS="/tmp/pe_menu_ids.txt"
+rm -f "${TMP_IDS}" || true
+
+sqlite3 "${DB_REGIONAL}" <<EOF
+.mode list
+.output ${TMP_IDS}
+SELECT GAME_ID FROM MENU_ENTRIES ORDER BY GAME_ID;
+.output stdout
+EOF
+
+new_id=1
+while read -r old_id; do
+  [ -z "$old_id" ] && continue
+  if [ "$old_id" != "$new_id" ]; then
+    [ -d "${PE_GAMES}/${old_id}" ] && mv "${PE_GAMES}/${old_id}" "${PE_GAMES}/${new_id}"
+    sqlite3 "${DB_REGIONAL}" "UPDATE MENU_ENTRIES SET GAME_ID=${new_id} WHERE GAME_ID=${old_id};"
+    sqlite3 "${DB_REGIONAL}" "UPDATE DISC SET GAME_ID=${new_id} WHERE GAME_ID=${old_id};"
+  fi
+  new_id=$((new_id + 1))
+done < "${TMP_IDS}"
+
+rm -f "${TMP_IDS}"
+log "Rebuilt game slot ordering"
+
+rm -f "${PE_ETC}/SYS/databases/"*.bak* || true
+log "Removed database backup files"
+
+rm -rf "${STATE_DIR}"
+log "Removed mod state directory"
 
 log "Uninstall complete."
 exit 0

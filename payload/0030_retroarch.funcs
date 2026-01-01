@@ -1,0 +1,269 @@
+#!/bin/sh
+#
+#  Copyright 2020 ModMyClassic (https://modmyclassic.com/license)
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+###############################################################################
+# Project Eris Function Library - RetroArch
+# ModMyClassic.com / https://discordapp.com/invite/8gygsrw
+###############################################################################
+
+RA_SAVE_PATH="/tmp/ra_save"
+RA_SAVESTATE_PATH="/tmp/ra_savestate"
+
+### UI_MENU -> retroarch INTERACTION FUNCTIONS ################################
+#  The follow variables will need to have been gathered from an intercept script
+#  prior to these functions being called
+#
+#  INTERCEPT_GAME_PATH=""     # The full path to the launching game file (follows argument -cdfile)
+#  INTERCEPT_GAME_DIR=""      # The directory game launched from - should be /data/AppData/sony/title
+#  INTERCEPT_GAME_ID=""       # The file name of the game minus the extension (ie. SCUS-0001)
+#  INTERCEPT_GAME_EXT=""      # The extension of game minus . (ie. cue)
+#  INTERCEPT_SAVE_STATE=false # Set to true if ui_menu launches with -load
+
+launch_retroarch_from_StockUI(){
+  START=$(date +%s%N)
+  echo "[PROJECT ERIS](INFO) Launching RetroArch from ui_menu"
+  #  Check RA Exists and is configured correctly
+  rm -f "${RUNTIME_LOG_PATH}/retroarch.log"
+  [ ! -f "${RETROARCH_PATH}/retroarch" ] && break #FAIL
+  if [ ! -f "${RETROARCH_PATH}/system/scph102b.bin" ]; then
+    cp -f "/gaadata/system/bios/romw.bin" "${RETROARCH_PATH}/system/scph102b.bin"
+    echo "[PROJECT ERIS](INFO) copied romw.bin to scph102b.bin for RA PCSX"
+  fi
+  mkdir -p "/tmp/ra_cache"
+  chmod +x "${PROJECT_ERIS_PATH}/etc/project_eris/SUP/scripts/ra_launch.sh"
+  if [ -d "${RA_SAVESTATE_PATH}" ]; then
+    rm -fr "${RA_SAVESTATE_PATH}"
+  fi
+  mkdir -p "${RA_SAVESTATE_PATH}"
+  link_ra_savestates
+  #  Check if this is a Save State load
+  if [ "${INTERCEPT_SAVE_STATE}" = true ]; then
+    echo "[PROJECT ERIS](INFO) This is a Save State load"
+    if [ ! -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" ]; then
+      if [ -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" ]; then
+        # Stock PCSX trims spaces out of save state names if they exist, and Stock UI cannot restore save states
+        # which have a space in the name (despite being able to save them!) This save state has a space so copy it manually
+        cp "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+      fi
+    fi
+    mv "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto"
+  fi
+  #  Launch retroarch
+  echo "[PROJECT ERIS](INFO) Launching RetroArch for game ${INTERCEPT_GAME_PATH}"
+  END=$(date +%s%N)
+  echo "[PROJECT ERIS](PROFILE) RetroArch launch_retroarch_from_StockUI function took: $(((END-START)/1000000))ms to execute (up to launching RetroArch executable)"
+# --- START: drive2 BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
+  if [ "${INTERCEPT_SAVE_STATE}" = true ] && [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+    (
+      TEMP_STATE_FILE="${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto"
+      ORIGINAL_STATE_FILE="/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+      LOG_FILE="${RUNTIME_LOG_PATH}/retroarch.log"
+      
+      # The target message to confirm load success
+      SUCCESS_MESSAGE="Auto-loading save state from \"${TEMP_STATE_FILE}\" succeeded."
+      
+      # Increased timeout to 80 seconds to account for slow cold boot/USB detection.
+      echo "[PROJECT ERIS](BG-MONITOR) drive2: Waiting for log confirmation of save state load (Max 80s)..."
+      
+      WAIT_COUNT=0
+      MAX_COUNT=800  # 800 iterations * 0.1s sleep = 80 seconds max wait
+      LOAD_CONFIRMED=0
+      
+      # Poll the log file every 0.1 seconds for the success message
+      while [ $WAIT_COUNT -lt $MAX_COUNT ]; do
+          # -f checks if the log file exists, -qF checks quickly for the fixed string message
+          if [ -f "${LOG_FILE}" ] && grep -qF "${SUCCESS_MESSAGE}" "${LOG_FILE}"; then
+              LOAD_CONFIRMED=1
+              break
+          fi
+          usleep 100000 # Wait 0.1 seconds (100,000 microseconds)
+          WAIT_COUNT=$((WAIT_COUNT + 1))
+      done
+
+      if [ $LOAD_CONFIRMED -eq 1 ]; then
+          echo "[PROJECT ERIS](BG-MOVE) drive2: Log confirmation found. Moving file back."
+      else
+          # Fallback: We proceed with the move after the 80s max wait to ensure prompt suppression.
+          echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: Load confirmation not found within 80s. Proceeding with fallback cleanup."
+      fi
+      
+      # Perform the move after polling completes (regardless of success/timeout)
+      if [ -f "${TEMP_STATE_FILE}" ]; then
+          mv "${TEMP_STATE_FILE}" "${ORIGINAL_STATE_FILE}"
+          echo "[PROJECT ERIS](BG-MOVE) drive2: Save state moved back."
+      else
+          echo "[PROJECT ERIS](BG-MOVE) drive2: Temporary state file not found."
+      fi
+
+    ) & # The '&' runs this cleanup concurrently with RetroArch.
+  fi
+  # --- END: drive2 BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
+  # --- START: drive2 MEMORY CARD PRE-LAUNCH SYNC ---
+  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+    MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
+    SRM_PATH="${RETROARCH_PATH}/saves/${INTERCEPT_GAME_ID}.srm"
+    mkdir -p "${RETROARCH_PATH}/saves"
+    
+    # 1. Copy the Stock UI pooled memory card (card1.mcd) to RetroArch's save file name (drive2.srm).
+    # This ensures RetroArch loads the latest pooled data.
+    if [ -f "${MCD_PATH}" ]; then
+      cp -f "${MCD_PATH}" "${SRM_PATH}"
+      echo "[PROJECT ERIS](INFO) drive2: Copied ${MCD_PATH} to ${SRM_PATH} for launch."
+    else
+      echo "[PROJECT ERIS](WARN) drive2: ${MCD_PATH} not found, starting with fresh memory card data."
+    fi
+    
+    # 2. Create a temporary symlink in /tmp/ra_save for RetroArch to read/write during the session.
+    # This points the expected /tmp/ra_save/drive2.srm to the real save file on USB.
+    ln -sf "${SRM_PATH}" "${RA_SAVE_PATH}/${INTERCEPT_GAME_ID}.srm"
+  fi
+  # --- END: drive2 MEMORY CARD PRE-LAUNCH SYNC ---
+  "${PROJECT_ERIS_PATH}/etc/project_eris/SUP/scripts/ra_launch.sh" -v -L "${RETROARCH_PATH}/config/retroarch/cores/${1}" "${INTERCEPT_GAME_PATH}" ${2}
+  echo "[PROJECT ERIS](INFO) RetroArch exit code $?"
+  save_ra_savestates
+  rm -fr "/tmp/ra_cache"
+}
+
+exit_checkSaveState(){
+  START=$(date +%s%N)
+  echo "[PROJECT ERIS](INFO) checking for auto save state on retroarch exit"
+  # --- START: drive2 MEMORY CARD POST-EXIT SYNC (MOVED TO START) ---
+  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+    MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
+    SRM_PATH="${RETROARCH_PATH}/saves/${INTERCEPT_GAME_ID}.srm"
+    
+    # Copy RetroArch's save file (drive2.srm) back to the Stock UI pooled memory card (card1.mcd)
+    if [ -f "${SRM_PATH}" ]; then
+      cp -f "${SRM_PATH}" "${MCD_PATH}"
+      echo "[PROJECT ERIS](INFO) drive2: Copied ${SRM_PATH} back to ${MCD_PATH} for UI update."
+    else
+      echo "[PROJECT ERIS](WARN) drive2: ${SRM_PATH} not found after exit."
+    fi
+  fi
+  # --- END: drive2 MEMORY CARD POST-EXIT SYNC ---
+  # An auto save state is created automatically, but what if the game disc was changed since
+  # retroarch was originally launched. Check that the last saved state matches the ID of the launching
+  # game
+  RA_LAST_GAME=$(ls -t "${RA_SAVESTATE_PATH}/"*.auto | head -1)
+  if [ x"${RA_LAST_GAME}" = x"" ]; then
+    echo "[PROJECT ERIS](INFO) no auto save state exists"
+    END=$(date +%s%N)
+    echo "[PROJECT ERIS](PROFILE) RetroArch check for save state took: $(((END-START)/1000000))ms to execute"
+    return 0
+  fi
+  RA_LAST_GAME="${RA_LAST_GAME##*/}"          # Remove leading directories
+  RA_LAST_GAME="${RA_LAST_GAME%.state.auto}"  # Remove trailing file extension .state.auto
+  if [ ! "${RA_LAST_GAME}" = "${INTERCEPT_GAME_ID}" ]; then
+    #  The last save state was for a different game, check if this disc belongs to the launching game
+    #  If it does then a disc swap has occured, so update the game ids so the correct save state
+    #  data is passed to ui_menu state is from a game which is different to the launched game"
+    if [ -f "/data/AppData/sony/title/${RA_LAST_GAME}.${INTERCEPT_GAME_EXT}" ]; then
+      echo "[PROJECT ERIS](INFO) ${RA_LAST_GAME}.${INTERCEPT_GAME_EXT} exists and belongs to the launching game, updating save state"
+      INTERCEPT_GAME_PATH="/data/AppData/sony/title/${RA_LAST_GAME}.${INTERCEPT_GAME_EXT}"
+      INTERCEPT_GAME_ID="${RA_LAST_GAME}"
+      echo "[PROJECT ERIS](INFO) New game path: ${INTERCEPT_GAME_PATH}"
+      echo "[PROJECT ERIS](INFO) New Game ID: ${INTERCEPT_GAME_ID}"
+    else
+      echo "[PROJECT ERIS](INFO) the last played game does not appear to belong to the game we launched from, so we'll ignore it [${RA_LAST_GAME}.${INTERCEPT_GAME_EXT}]"
+    fi
+  fi
+  #  Check if an auto save state exists and then move it to the correct location for ui_menu to handle
+  if [ -f "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto" ]; then
+    echo "[PROJECT ERIS](INFO) an auto save state exists"
+    #  Create filename.txt
+    echo "${INTERCEPT_GAME_PATH}" > "/data/AppData/sony/pcsx/.pcsx/filename.txt"
+    echo "${INTERCEPT_GAME_ID}" >> "/data/AppData/sony/pcsx/.pcsx/filename.txt"
+    #  Create save state folders
+    mkdir -p "/data/AppData/sony/pcsx/.pcsx/sstates"
+    mkdir -p "/data/AppData/sony/pcsx/.pcsx/screenshots"
+    #  Move save state files
+    mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+	if [ -f "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" ]; then
+		mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
+	else
+		cp "${PROJECT_ERIS_PATH}/etc/project_eris/IMG/retroarch.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
+	fi
+  fi
+  # Remove the temporary save state folder. This is only used when Stock UI is launching RetroArch
+  # and only for the current game
+  rm -fR "${RA_SAVESTATE_PATH}"
+  END=$(date +%s%N)
+  echo "[PROJECT ERIS](PROFILE) RetroArch check for save state took: $(((END-START)/1000000))ms to execute"
+}
+
+link_ra_memory_cards(){
+  #  This function will link ui_menu and retroarch memory cards
+  #  ui_menu memory cards take precedence
+  START=$(date +%s%N)
+  echo "[PROJECT ERIS](INFO) linking ui_menu memory cards to RetroArch"
+  if ls -la | grep -i ".pcsx ->"; then
+    if [ ! -f "/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd" ]; then
+      mkdir -p "/data/AppData/sony/pcsx/.pcsx/memcards"
+      cp "/usr/sony/share/data/memcard/card.mcd" "/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
+    fi
+    if [ -d "${RA_SAVE_PATH}" ]; then
+      # This is a temporary save location for use by the current RetroArch game only
+      rm -fr "${RA_SAVE_PATH}"
+    fi
+    mkdir -p "${RA_SAVE_PATH}"
+    # Set the target memory card path
+    TARGET_MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
+    
+    # Only link to card1.mcd if it's NOT the drive2 ID.
+    # We will handle drive2 via a copy/sync operation for guaranteed stability and UI visibility.
+    if [ ! "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+      ln -sf "${TARGET_MCD_PATH}" "${RA_SAVE_PATH}/${INTERCEPT_GAME_ID}.srm"
+    fi
+    # RetroArch creates a memory card per game, which means all possible game discs need to be linked back to
+    # /data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd. If this isn't done then each individual disc will have its
+    # own memory card
+    #
+    # This is rather brute force at the moment, but iterate through each file in the directory and create a memory card symlink
+    for e in "/data/AppData/sony/title/"*; do
+      if [ -f "${e}" ]; then
+        TEMP_ID="${e##*/}"
+        TEMP_ID="${TEMP_ID%.*}"
+        ln -sf "/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd" "${RA_SAVE_PATH}/${TEMP_ID}.srm"
+      fi
+    done
+  fi
+  END=$(date +%s%N)
+  echo "[PROJECT ERIS](PROFILE) RetroArch link memory cards took: $(((END-START)/1000000))ms to execute"
+}
+
+link_ra_savestates(){
+  # This function will link relevant RetroArch save states into the temporary save state location
+  # which will enable the additional multiple save slot functionality RetroArch provides when
+  # launched from the Stock UI
+  START=$(date +%s%N)
+  echo "[PROJECT ERIS](INFO) linking other RetroArch save states into temporary location"
+  find "${RETROARCH_PATH}/savestates/" -name "${INTERCEPT_GAME_ID}.state*" -a ! -name "${INTERCEPT_GAME_ID}.state.*" -maxdepth 1 -type f -exec ln -sf "{}" "${RA_SAVESTATE_PATH}" +
+  END=$(date +%s%N)
+  echo "[PROJECT ERIS](PROFILE) link_ra_save_states took: $(((END-START)/1000000))ms to execute"
+}
+
+save_ra_savestates(){
+  # This function will move any save states, other than auto save states, that may have been created
+  # during this session back into the main RetroArch save state folder
+  START=$(date +%s%N)
+  echo "[PROJECT ERIS](INFO) moving other RetroArch save states back to the main RetroArch location"
+  find "${RA_SAVESTATE_PATH}" -name "*.state*" -a ! -name "*state.*" -maxdepth 1 -type f -exec mv "{}" "${RETROARCH_PATH}/savestates/" +
+  END=$(date +%s%N)
+  echo "[PROJECT ERIS](PROFILE) save_ra_savestates took: $(((END-START)/1000000))ms to execute"
+}
+
+###############################################################################

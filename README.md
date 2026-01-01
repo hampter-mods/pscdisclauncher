@@ -1,3 +1,5 @@
+<img width="512" height="512" alt="drive2" src="https://github.com/user-attachments/assets/fe4bb482-2e03-4151-b699-00210749877c" />
+
 ## ⚠️ Important Notes / Disclaimers
 
 - This mod **modifies system files and databases** used by Project Eris.

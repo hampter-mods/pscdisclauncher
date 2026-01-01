@@ -99,7 +99,7 @@ When finished, you’re ready to go 🎉
 To completely remove everything and restore backups:
 
 ```bash
-cd /media/PlayStation-Classic-Disc-Launcher-main
+cd /media/pscdisclauncher-main
 bash uninstall.sh
 ```
 

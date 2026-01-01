@@ -46,7 +46,7 @@ Your USB should look like:
 
 ```
 SONY/
-  PlayStation-Classic-Disc-Launcher-main/
+  pscdisclauncher-main/
     install.sh
     uninstall.sh
     payload/
@@ -78,7 +78,7 @@ ssh root@169.254.215.100
 ### 4️⃣ Run the installer
 
 ```bash
-cd /media/PlayStation-Classic-Disc-Launcher-main
+cd /media/pscdisclauncher-main
 bash install.sh
 ```
 

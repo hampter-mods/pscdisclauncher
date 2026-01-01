@@ -4,6 +4,11 @@
 - Use at your own risk — although a full uninstall is provided.
 - You must have **Project Eris already installed and working**.
 - This does **not** replace Project Eris — it extends it.
+- If you are **not using internal USB mods**:
+  - You will need a **powered USB hub**
+  - It will work via the **front USB ports**
+  - The disc drive does **not fully work over OTG**
+    (you can still tap power via OTG using a **Y-splitter** if needed)
 
 ### Required Settings
 

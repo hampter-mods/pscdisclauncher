@@ -144,7 +144,7 @@ if [ "${EXISTS_GAME}" -eq 0 ]; then
   sqlite3 "${DB_REGIONAL}" "INSERT INTO MENU_ENTRIES
     (GAME_ID, GAME_TITLE_STRING, PUBLISHER_NAME, RELEASE_YEAR, PLAYERS, RATING_IMAGE, GAME_MANUAL_QR_IMAGE, LINK_GAME_ID, POSITION)
     VALUES
-    (${NEW_ID}, '${TITLE_SQL}', 'Sony', 1994, 4, 'CERO_A', 'QR_Code_GM', '', ${NEW_ID});"
+    (${NEW_ID}, '${TITLE_SQL}', 'Sony Interactive Entertainment', 1994, 4, 'CERO_A', 'QR_Code_GM', '', ${NEW_ID});"
   log "Inserted MENU_ENTRIES row into regional.db (GAME_ID=${NEW_ID})"
 else
   log "regional.db already has a MENU_ENTRIES row titled '${TITLE}' - reusing existing GAME_ID"

@@ -403,8 +403,6 @@ This project is actively evolving. Planned improvements include:
 
 ## Legal / Ethical Notice
 
----
-
 - This project does **not condone piracy**. It is intended only for use with **legally owned physical discs or personal backup copies**.
 - I do **not provide PlayStation BIOS files**, game images, or copyrighted content of any kind.
 - Users are responsible for complying with their local laws regarding game backups and emulation.

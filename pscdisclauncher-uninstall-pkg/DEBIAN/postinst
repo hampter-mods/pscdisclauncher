@@ -1,0 +1,49 @@
+#!/bin/sh
+set -e
+
+safe_rm() {
+  if [ -e "$1" ]; then
+    rm -f "$1" || true
+  fi
+  return 0
+}
+
+safe_rmdir() {
+  if [ -d "$1" ]; then
+    rmdir "$1" 2>/dev/null || true
+  fi
+  return 0
+}
+
+# remove transfer files
+safe_rm /media/transfer/drive2.bin
+safe_rm /media/transfer/drive2.cue
+
+# remove cover
+safe_rm /media/project_eris/opt/psc_transfer_tools/covers/SLUS-99998.png
+
+# remove retroarch configs / cores / modules
+safe_rm /media/project_eris/opt/retroarch/config/retroarch/ra-game-cdrom.cfg
+safe_rm /media/project_eris/opt/retroarch/config/retroarch/cores/pcsx_rearmed_discproject.so
+
+safe_rm /media/project_eris/opt/retroarch/modules/sr_mod.ko
+safe_rm /media/project_eris/opt/retroarch/modules/sg.ko
+safe_rm /media/project_eris/opt/retroarch/modules/cdrom.ko
+
+# remove theme assets
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_error.png
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_invalid_disc.png
+
+# remove save / opts
+safe_rm /media/project_eris/opt/retroarch/config/retroarch/config/PCSX-ReARMed/drive2.opt
+safe_rm /media/project_eris/opt/retroarch/saves/drive2.srm
+
+# remove drive2 installed flag
+safe_rm /media/project_eris/mods/.installed/drive2
+
+# cleanup empty dirs
+safe_rmdir /media/project_eris/opt/retroarch/modules
+safe_rmdir /media/project_eris/mods/.uninstall
+safe_rmdir /media/project_eris/mods/.installed
+
+exit 0

@@ -1,0 +1,5 @@
+Package: pscdisclauncher-install
+Version: 1.1.0
+Architecture: all
+Maintainer: hampter-mods
+Description: Install the PlayStation Classic disc launcher.

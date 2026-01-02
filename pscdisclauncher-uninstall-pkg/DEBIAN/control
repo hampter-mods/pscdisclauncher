@@ -1,0 +1,5 @@
+Package: pscdisclauncher-uninstall
+Version: 1.1.0
+Architecture: all
+Maintainer: hampter-mods
+Description: Uninstall the PlayStation Classic disc launcher.

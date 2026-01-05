@@ -385,11 +385,6 @@ This project is actively evolving. Planned improvements include:
   - Per-game virtual memory cards
   - Per-game save-state namespaces
 
-- **Integrated disc ripping & library builder**
-  - Rip inserted discs directly on the PSC
-  - Convert to Project Eris USB-format entries
-  - Auto-generate cover art, metadata, launcher entries
-
 ---
 
 ## References

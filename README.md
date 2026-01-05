@@ -1,7 +1,8 @@
 <table>
   <tr>
     <td width="280" valign="middle">
-      <img width="256" height="256" alt="drive2" src="<temp>" />
+      <img width="256" height="256" alt="drive2" src="<img width="512" height="512" alt="SLUS-99998" src="https://github.com/user-attachments/assets/99286216-0a3c-4864-8e3b-36dec3bfc058" />
+      " />
     </td>
     <td valign="middle">
       <h1>PlayStation Classic — Real Discs</h1>

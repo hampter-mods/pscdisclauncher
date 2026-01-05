@@ -38,7 +38,7 @@ sdl_text "Scanning transfer directory for games..."
 
 RET=$?
 
-# --- Inject Game.ini into the transferred drive2 launcher directory (only for our serial) ---
+# --- Inject Game.ini into any transferred drive2 launcher directories (only for our serial) ---
 if [ "$RET" -eq 0 ]; then
   TLOG="${RUNTIME_LOG_PATH}/transfer.log"
   SRC_INI="${PROJECT_ERIS_PATH}/opt/psc_transfer_tools/Game.ini"
@@ -48,29 +48,20 @@ if [ "$RET" -eq 0 ]; then
   # - tolerate minor formatting changes (match just the serial token)
   if [ -f "$TLOG" ] && tr -d '\r' < "$TLOG" 2>/dev/null | grep -Fq "SLUS-99998"; then
     if [ -f "$SRC_INI" ]; then
-      FOUND_DIR=""
-
-      # Only scan game dirs if we've positively detected our serial.
       for d in "${MOUNTPOINT}/games/"*; do
         [ -d "$d" ] || continue
 
-        # Detect our launcher folder by its assets
+        # Detect a disc launcher folder by its assets
         if [ -f "$d/drive2.cue" ] && [ -f "$d/drive2.bin" ] && [ -f "$d/drive2.png" ]; then
-          FOUND_DIR="$d"
-          break
+          # Only inject if missing (so each instance keeps its own state)
+          if [ ! -f "$d/Game.ini" ]; then
+            cp -f "$SRC_INI" "$d/Game.ini" 2>/dev/null || true
+            chmod 0644 "$d/Game.ini" 2>/dev/null || true
+          fi
         fi
       done
 
-      if [ -n "$FOUND_DIR" ]; then
-        # Optional safety: don't overwrite if already present
-        if [ ! -f "$FOUND_DIR/Game.ini" ]; then
-          cp -f "$SRC_INI" "$FOUND_DIR/Game.ini" 2>/dev/null || true
-          chmod 0644 "$FOUND_DIR/Game.ini" 2>/dev/null || true
-          sync 2>/dev/null || true
-          # Optional: log success
-          # echo "[psc_transfer_launch] injected Game.ini into $FOUND_DIR" >> "$TLOG" 2>/dev/null || true
-        fi
-      fi
+      sync 2>/dev/null || true
     fi
   fi
 fi

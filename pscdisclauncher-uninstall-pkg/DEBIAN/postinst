@@ -19,6 +19,9 @@ safe_rmdir() {
 safe_rm /media/transfer/drive2.bin
 safe_rm /media/transfer/drive2.cue
 
+# remove our injected transfer helper config
+safe_rm /media/project_eris/opt/psc_transfer_tools/Game.ini
+
 # remove cover
 safe_rm /media/project_eris/opt/psc_transfer_tools/covers/SLUS-99998.png
 

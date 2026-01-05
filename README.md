@@ -9,7 +9,7 @@
       />
     </td>
     <td valign="middle">
-      <h1>PlayStation Classic Disc Launcher</h1>
+      <h1>PS1 Game Disc Launcher (for PlayStation Classic)</h1>
       <p><i>Adds support for playing real PlayStation discs with Project Eris on the PlayStation Classic with external USB disc drives.</i></p>
     </td>
   </tr>

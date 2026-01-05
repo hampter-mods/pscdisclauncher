@@ -188,7 +188,7 @@ rm -f ~/data.tar ~/data.tar.xz ~/control.tar.gz ~/debian-binary ~/pscdisclaunche
 rm -rf ~/pscdisclauncher-install
 
 # 1) stage package in Linux FS (permissions behave)
-cp -r /mnt/c/Users/<YOUR_USERNAME>/Music/pscdisclauncher-install ~/pscdisclauncher-install
+cp -r /mnt/<path to downloaded source>/pscdisclauncher/pscdisclauncher-install-pkg ~/pscdisclauncher-install
 cd ~/pscdisclauncher-install
 
 # 2) permissions (DEBIAN + scripts)
@@ -229,7 +229,7 @@ rm -f ~/data.tar ~/data.tar.xz ~/control.tar.gz ~/debian-binary ~/pscdisclaunche
 
 # 1) stage package in Linux FS (clean staging dir first)
 rm -rf ~/pscdisclauncher-uninstall
-cp -r /mnt/c/Users/<YOUR_USERNAME>/Music/pscdisclauncher-uninstall ~/pscdisclauncher-uninstall
+cp -r /mnt/<path to downloaded source>/pscdisclauncher/pscdisclauncher-uninstall-pkg ~/pscdisclauncher-uninstall
 cd ~/pscdisclauncher-uninstall
 
 # 2) permissions

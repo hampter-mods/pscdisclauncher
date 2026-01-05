@@ -163,20 +163,14 @@ The build process creates:
 
 #### Put the pkg folders somewhere on Windows
 
-These one-paste build scripts expect the source folders to exist at:
+For example:
 
 ```
-C:\Users\<YOUR_USERNAME>\Music\pscdisclauncher-install
-C:\Users\<YOUR_USERNAME>\Music\pscdisclauncher-uninstall
-```
+C:\Users\<your user>\Documents\pscdisclauncher\pscdisclauncher-install
+C:\Users\<your user>\Documents\pscdisclauncher\pscdisclauncher-uninstall
 
-So either:
-- Copy/rename the repo folders:
-  - `pscdisclauncher-install-pkg` → `C:\Users\<YOU>\Music\pscdisclauncher-install`
-  - `pscdisclauncher-uninstall-pkg` → `C:\Users\<YOU>\Music\pscdisclauncher-uninstall`
-  
-OR:
-- Edit the `/mnt/c/...` paths in the command blocks below to match your location.
+```
+- Edit the `/mnt/...` paths in the command blocks below to match your location.
 
 #### Build: Install mod (single paste)
 

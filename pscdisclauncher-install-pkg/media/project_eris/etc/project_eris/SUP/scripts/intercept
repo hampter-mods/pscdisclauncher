@@ -103,6 +103,39 @@ show_drive2_invalid_disc_screen() {
     echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: no invalid-disc image found to display"
   fi
 }
+
+show_drive2_wrong_disc_screen() {
+  # Dedicated wrong-disc image, then fall back to invalid-disc / drive2_error / ra_loading
+  local ERR_IMG=""
+
+  if [ -f "${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_wrong_disc.png" ]; then
+    ERR_IMG="${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_wrong_disc.png"
+  elif [ -f "${THEMES_PATH}/stock/menu_files/ra_drive2_wrong_disc.png" ]; then
+    ERR_IMG="${THEMES_PATH}/stock/menu_files/ra_drive2_wrong_disc.png"
+  elif [ -f "${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_invalid_disc.png" ]; then
+    ERR_IMG="${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_invalid_disc.png"
+  elif [ -f "${THEMES_PATH}/stock/menu_files/ra_drive2_invalid_disc.png" ]; then
+    ERR_IMG="${THEMES_PATH}/stock/menu_files/ra_drive2_invalid_disc.png"
+  elif [ -f "${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_error.png" ]; then
+    ERR_IMG="${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_drive2_error.png"
+  elif [ -f "${THEMES_PATH}/stock/menu_files/ra_drive2_error.png" ]; then
+    ERR_IMG="${THEMES_PATH}/stock/menu_files/ra_drive2_error.png"
+  elif [ -f "${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_loading.png" ]; then
+    ERR_IMG="${THEMES_PATH}/${SELECTED_THEME}/menu_files/ra_loading.png"
+  elif [ -f "${THEMES_PATH}/stock/menu_files/ra_loading.png" ]; then
+    ERR_IMG="${THEMES_PATH}/stock/menu_files/ra_loading.png"
+  fi
+
+  if [ -n "${ERR_IMG}" ]; then
+    echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: showing wrong-disc screen ${ERR_IMG}"
+    "${PROJECT_ERIS_PATH}/bin/sdl_display" "${ERR_IMG}" &
+
+    # Auto-dismiss after ~30s
+    delayed_sdl_display_kill &
+  else
+    echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: no wrong-disc image found to display"
+  fi
+}
 find_any_cdrom_dev() {
   # Return the first existing /dev/sr* block device, or nothing if none.
   for dev in /dev/sr*; do
@@ -570,6 +603,67 @@ if [ "${LAUNCH_RA_FROM_STOCK_UI}" = "1" ] || [ "${RA_GAME}" = true ]; then
     fi
 
     echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: disc passed SYSTEM.CNF checks at ${MOUNT_PT}, continuing to RetroArch"
+
+# --- START: drive2 CURRENT DISC SYSTEM.CNF SNAPSHOT (/tmp) ---
+# Capture the validated SYSTEM.CNF into a stable temp location so later logic
+# (save-state confirm pipeline) can use it even if /tmp/cdrom becomes stale.
+DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+
+# Ensure SYSTEM_CNF is populated (case-insensitive)
+if [ -z "${SYSTEM_CNF}" ]; then
+  SYSTEM_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
+fi
+
+if [ -n "${SYSTEM_CNF}" ] && [ -f "${SYSTEM_CNF}" ]; then
+  TMP_CUR="${DRIVE2_TMP_CNF}.tmp.$$"
+  cp -f "${SYSTEM_CNF}" "${TMP_CUR}" 2>/dev/null
+  sync
+  mv -f "${TMP_CUR}" "${DRIVE2_TMP_CNF}" 2>/dev/null
+  sync
+  echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: snapshotted SYSTEM.CNF to ${DRIVE2_TMP_CNF}"
+else
+  echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: could not snapshot SYSTEM.CNF (not found) at ${MOUNT_PT}"
+fi
+# --- END: drive2 CURRENT DISC SYSTEM.CNF SNAPSHOT (/tmp) ---
+
+# --- START: drive2 SAVE-STATE DISC CHECK (resume-only, no unmount) ---
+if [ "${INTERCEPT_SAVE_STATE}" = true ] && [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+  # Stored reference copied when the savestate was confirmed/converted by the UI.
+  DRIVE2_REF_CNF="/data/AppData/sony/pcsx/.pcsx/sstates/drive2.system.cnf"
+
+  # Current disc SYSTEM.CNF (any case) – SYSTEM_CNF was discovered earlier in this mount routine.
+  # If for any reason SYSTEM_CNF is empty here, re-find it.
+  if [ -z "${SYSTEM_CNF}" ]; then
+    SYSTEM_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
+  fi
+
+  # Wait briefly for drive2.system.cnf to appear (background capture may still be finishing)
+  WAIT_REF=0
+  while [ ! -f "${DRIVE2_REF_CNF}" ] && [ $WAIT_REF -lt 80 ]; do
+    usleep 100000  # 0.1s
+    WAIT_REF=$((WAIT_REF + 1))
+  done
+
+  # Re-find SYSTEM.CNF just in case mount was reused and SYSTEM_CNF wasn't set
+  if [ -z "${SYSTEM_CNF}" ]; then
+    SYSTEM_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
+  fi
+
+  if [ -f "${DRIVE2_REF_CNF}" ] && [ -n "${SYSTEM_CNF}" ] && [ -f "${SYSTEM_CNF}" ]; then
+    if ! cmp -s "${DRIVE2_REF_CNF}" "${SYSTEM_CNF}" 2>/dev/null; then
+      echo "[PROJECT ERIS](INTERCEPT)(ERROR) drive2: wrong disc for savestate resume (SYSTEM.CNF mismatch)"
+      # IMPORTANT: do NOT umount or delete ${MOUNT_PT}. Let the user swap quickly.
+      resume_ui_menu
+      show_drive2_wrong_disc_screen
+      echo -n 1 > "/data/power/disable"
+      exit 0
+    fi
+    echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: savestate resume disc check passed"
+  else
+    echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: savestate resume disc check skipped (ref or SYSTEM.CNF still missing after wait)"
+  fi
+fi
+# --- END: drive2 SAVE-STATE DISC CHECK (resume-only, no unmount) ---
     # Remember which /dev/srX node was valid for this run (for hot-swap reuse)
     if [ -n "${CDROM_DEV}" ]; then
       echo "${CDROM_DEV}" > /var/volatile/drive2_cdrom_dev

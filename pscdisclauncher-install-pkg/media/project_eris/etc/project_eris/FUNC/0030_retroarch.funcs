@@ -192,6 +192,180 @@ exit_checkSaveState(){
     mkdir -p "/data/AppData/sony/pcsx/.pcsx/screenshots"
     #  Move save state files
     mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+
+# --- START: drive2 SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
+if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+  (
+    # Resolve volatile .pcsx symlink to a real path (prevents ui_menu resume from breaking watchers)
+    PCSX_LINK="/data/AppData/sony/pcsx/.pcsx"
+    PCSX_REAL="$(readlink -f "${PCSX_LINK}" 2>/dev/null)"
+
+    if [ -z "${PCSX_REAL}" ] || [ ! -d "${PCSX_REAL}" ]; then
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: .pcsx real path not available yet; waiting briefly..."
+      t=0
+      while [ $t -lt 100 ]; do  # 10s @ 0.1s
+        PCSX_REAL="$(readlink -f "${PCSX_LINK}" 2>/dev/null)"
+        [ -n "${PCSX_REAL}" ] && [ -d "${PCSX_REAL}" ] && break
+        usleep 100000
+        t=$((t+1))
+      done
+    fi
+
+    if [ -z "${PCSX_REAL}" ] || [ ! -d "${PCSX_REAL}" ]; then
+      echo "[PROJECT ERIS](BG-MONITOR)(ERROR) drive2: could not resolve .pcsx real path; aborting reference capture"
+      exit 0
+    fi
+
+    SSTATES_DIR="${PCSX_REAL}/sstates"
+    PLACEHOLDER="${SSTATES_DIR}/drive2.000"
+    RES_FILE="${SSTATES_DIR}/drive2.000.res"
+    REF_FILE="${SSTATES_DIR}/drive2.system.cnf"
+    # Prefer the stable snapshot created during launch (works even if /tmp/cdrom is stale)
+    DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+
+    copy_ref_cnf() {
+      if [ -f "${DRIVE2_TMP_CNF}" ]; then
+        TMP_REF="${REF_FILE}.tmp.$$"
+        cp -f "${DRIVE2_TMP_CNF}" "${TMP_REF}"
+        sync
+        mv -f "${TMP_REF}" "${REF_FILE}"
+        sync
+        echo "[PROJECT ERIS](BG-MONITOR) drive2: copied SYSTEM.CNF snapshot (${DRIVE2_TMP_CNF}) to ${REF_FILE}"
+        return 0
+      fi
+
+      # Fallback: attempt direct mount lookup (case-insensitive) if snapshot missing
+      MOUNT_PT="/tmp/cdrom"
+      if [ -d "${MOUNT_PT}" ]; then
+        DISC_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
+        if [ -n "${DISC_CNF}" ] && [ -f "${DISC_CNF}" ]; then
+          TMP_REF="${REF_FILE}.tmp.$$"
+          cp -f "${DISC_CNF}" "${TMP_REF}"
+          sync
+          mv -f "${TMP_REF}" "${REF_FILE}"
+          sync
+          echo "[PROJECT ERIS](BG-MONITOR) drive2: copied SYSTEM.CNF (fallback mount) to ${REF_FILE}"
+          return 0
+        fi
+      fi
+
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: SYSTEM.CNF not available (no snapshot, no mount); not copying"
+      return 1
+    }
+
+    # Snapshot BEFORE state
+    RES_EXISTED=0
+    BASE_MTIME=""
+    BASE_SIZE=""
+
+    if [ -f "${RES_FILE}" ]; then
+      RES_EXISTED=1
+      BASE_MTIME="$(stat -c %Y "${RES_FILE}" 2>/dev/null)"
+      BASE_SIZE="$(wc -c < "${RES_FILE}" 2>/dev/null)"
+    fi
+
+    ############################################################
+    # CASE 1: drive2.000.res is FIRST CREATED (didn't exist -> exists)
+    ############################################################
+    if [ "${RES_EXISTED}" -eq 0 ]; then
+      echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE1 waiting for first creation of ${RES_FILE}..."
+
+      i=0
+      while [ $i -lt 1800 ]; do  # 180s @ 0.1s
+        if [ -f "${RES_FILE}" ]; then
+          # wait briefly for file to "settle" (avoid copying on a transient create)
+          LAST_SZ=""
+          STABLE=0
+          j=0
+          while [ $j -lt 10 ]; do  # 1s total @ 0.1s
+            CUR_SZ="$(wc -c < "${RES_FILE}" 2>/dev/null)"
+            if [ -n "${CUR_SZ}" ] && [ "${CUR_SZ}" != "0" ] && [ "${CUR_SZ}" = "${LAST_SZ}" ]; then
+              STABLE=$((STABLE + 1))
+            else
+              STABLE=0
+              LAST_SZ="${CUR_SZ}"
+            fi
+            usleep 100000
+            j=$((j+1))
+          done
+          if [ $STABLE -ge 5 ]; then
+            copy_ref_cnf
+            exit 0
+          fi
+        fi
+        usleep 100000
+        i=$((i+1))
+      done
+
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE1 ${RES_FILE} never appeared (user likely hit NO)"
+      exit 0
+    fi
+
+    ############################################################
+    # CASE 2: drive2.000.res EXISTS and is UPDATED
+    # Wait for placeholder appear -> disappear, then require .res updated
+    ############################################################
+    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 waiting for placeholder ${PLACEHOLDER} to APPEAR..."
+
+    i=0
+    while [ $i -lt 1800 ]; do  # 180s @ 0.1s
+      [ -f "${PLACEHOLDER}" ] && break
+      usleep 100000
+      i=$((i+1))
+    done
+    if [ ! -f "${PLACEHOLDER}" ]; then
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 placeholder never appeared (user likely hit NO)"
+      exit 0
+    fi
+
+    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 placeholder appeared; waiting for it to DISAPPEAR..."
+
+    i=0
+    while [ $i -lt 1800 ]; do  # 180s @ 0.1s
+      [ -f "${PLACEHOLDER}" ] || break
+      usleep 100000
+      i=$((i+1))
+    done
+    if [ -f "${PLACEHOLDER}" ]; then
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 placeholder never disappeared; not copying"
+      exit 0
+    fi
+
+    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 placeholder disappeared; waiting for ${RES_FILE} to be UPDATED..."
+
+    UPDATED=0
+    i=0
+    while [ $i -lt 1800 ]; do  # 180s @ 0.1s
+      if [ -f "${RES_FILE}" ]; then
+        NEW_MTIME="$(stat -c %Y "${RES_FILE}" 2>/dev/null)"
+        NEW_SIZE="$(wc -c < "${RES_FILE}" 2>/dev/null)"
+
+        # Updated if mtime changed OR size changed (mtime can be 1-second granularity)
+        if [ -n "${NEW_MTIME}" ] && [ "${NEW_MTIME}" != "${BASE_MTIME}" ]; then
+          UPDATED=1
+          break
+        fi
+        if [ -n "${NEW_SIZE}" ] && [ "${NEW_SIZE}" != "${BASE_SIZE}" ]; then
+          UPDATED=1
+          break
+        fi
+      fi
+
+      usleep 100000
+      i=$((i+1))
+    done
+
+    if [ "${UPDATED}" -eq 1 ]; then
+      copy_ref_cnf
+      exit 0
+    fi
+
+    echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 ${RES_FILE} did not update within window; not copying"
+    exit 0
+  ) &
+fi
+# --- END: drive2 SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
+
 	if [ -f "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" ]; then
 		mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
 	else

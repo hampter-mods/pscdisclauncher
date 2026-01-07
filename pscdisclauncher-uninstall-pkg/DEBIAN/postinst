@@ -36,6 +36,7 @@ safe_rm /media/project_eris/opt/retroarch/modules/cdrom.ko
 # remove theme assets
 safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_error.png
 safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_invalid_disc.png
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_wrong_disc.png
 
 # remove save / opts
 safe_rm /media/project_eris/opt/retroarch/config/retroarch/config/PCSX-ReARMed/drive2.opt

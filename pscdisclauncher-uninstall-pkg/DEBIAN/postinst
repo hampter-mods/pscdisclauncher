@@ -16,8 +16,8 @@ safe_rmdir() {
 }
 
 # remove transfer files
-safe_rm /media/transfer/drive2.bin
-safe_rm /media/transfer/drive2.cue
+safe_rm /media/transfer/disc_launcher.bin
+safe_rm /media/transfer/disc_launcher.cue
 
 # remove our injected transfer helper config
 safe_rm /media/project_eris/opt/psc_transfer_tools/Game.ini
@@ -34,16 +34,24 @@ safe_rm /media/project_eris/opt/retroarch/modules/sg.ko
 safe_rm /media/project_eris/opt/retroarch/modules/cdrom.ko
 
 # remove theme assets
-safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_error.png
-safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_invalid_disc.png
-safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_drive2_wrong_disc.png
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_disc_launcher_error.png
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_disc_launcher_invalid_disc.png
+safe_rm /media/project_eris/etc/project_eris/THEME/stock/menu_files/ra_disc_launcher_wrong_disc.png
 
 # remove save / opts
-safe_rm /media/project_eris/opt/retroarch/config/retroarch/config/PCSX-ReARMed/drive2.opt
-safe_rm /media/project_eris/opt/retroarch/saves/drive2.srm
+safe_rm /media/project_eris/opt/retroarch/config/retroarch/config/PCSX-ReARMed/disc_launcher.opt
+safe_rm /media/project_eris/opt/retroarch/saves/disc_launcher.srm
+for f in /media/project_eris/opt/retroarch/config/retroarch/config/PCSX-ReARMed/drive[0-9]*.opt; do
+  [ -e "$f" ] || continue
+  safe_rm "$f"
+done
+for f in /media/project_eris/opt/retroarch/saves/drive[0-9]*.srm; do
+  [ -e "$f" ] || continue
+  safe_rm "$f"
+done
 
-# remove drive2 installed flag
-safe_rm /media/project_eris/mods/.installed/drive2
+# remove disc_launcher installed flag
+safe_rm /media/project_eris/mods/.installed/disc_launcher
 
 # cleanup empty dirs
 safe_rmdir /media/project_eris/opt/retroarch/modules

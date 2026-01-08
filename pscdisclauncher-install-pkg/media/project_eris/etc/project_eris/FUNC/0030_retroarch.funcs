@@ -23,6 +23,15 @@
 RA_SAVE_PATH="/tmp/ra_save"
 RA_SAVESTATE_PATH="/tmp/ra_savestate"
 
+get_ra_content_id(){
+  # For disc_launcher physical discs, RetroArch may use driveX based on USB order.
+  if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ] && [ -n "${disc_launcher_RA_ID}" ]; then
+    echo "${disc_launcher_RA_ID}"
+  else
+    echo "${INTERCEPT_GAME_ID}"
+  fi
+}
+
 ### UI_MENU -> retroarch INTERACTION FUNCTIONS ################################
 #  The follow variables will need to have been gathered from an intercept script
 #  prior to these functions being called
@@ -36,6 +45,7 @@ RA_SAVESTATE_PATH="/tmp/ra_savestate"
 launch_retroarch_from_StockUI(){
   START=$(date +%s%N)
   echo "[PROJECT ERIS](INFO) Launching RetroArch from ui_menu"
+  RA_CONTENT_ID="$(get_ra_content_id)"
   #  Check RA Exists and is configured correctly
   rm -f "${RUNTIME_LOG_PATH}/retroarch.log"
   [ ! -f "${RETROARCH_PATH}/retroarch" ] && break #FAIL
@@ -53,6 +63,16 @@ launch_retroarch_from_StockUI(){
   #  Check if this is a Save State load
   if [ "${INTERCEPT_SAVE_STATE}" = true ]; then
     echo "[PROJECT ERIS](INFO) This is a Save State load"
+    if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ] && [ "${RA_CONTENT_ID}" != "${INTERCEPT_GAME_ID}" ]; then
+      if [ ! -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" ] && \
+         [ -f "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000" ]; then
+        cp -f "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+      fi
+      if [ ! -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" ] && \
+         [ -f "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000.res" ]; then
+        cp -f "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000.res" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res"
+      fi
+    fi
     if [ ! -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" ]; then
       if [ -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" ]; then
         # Stock PCSX trims spaces out of save state names if they exist, and Stock UI cannot restore save states
@@ -60,16 +80,16 @@ launch_retroarch_from_StockUI(){
         cp "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
       fi
     fi
-    mv "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto"
+    mv "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" "${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto"
   fi
   #  Launch retroarch
   echo "[PROJECT ERIS](INFO) Launching RetroArch for game ${INTERCEPT_GAME_PATH}"
   END=$(date +%s%N)
   echo "[PROJECT ERIS](PROFILE) RetroArch launch_retroarch_from_StockUI function took: $(((END-START)/1000000))ms to execute (up to launching RetroArch executable)"
-# --- START: drive2 BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
-  if [ "${INTERCEPT_SAVE_STATE}" = true ] && [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+# --- START: disc_launcher BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
+  if [ "${INTERCEPT_SAVE_STATE}" = true ] && [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
     (
-      TEMP_STATE_FILE="${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto"
+      TEMP_STATE_FILE="${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto"
       ORIGINAL_STATE_FILE="/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
       LOG_FILE="${RUNTIME_LOG_PATH}/retroarch.log"
       
@@ -77,7 +97,7 @@ launch_retroarch_from_StockUI(){
       SUCCESS_MESSAGE="Auto-loading save state from \"${TEMP_STATE_FILE}\" succeeded."
       
       # Increased timeout to 80 seconds to account for slow cold boot/USB detection.
-      echo "[PROJECT ERIS](BG-MONITOR) drive2: Waiting for log confirmation of save state load (Max 80s)..."
+      echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: Waiting for log confirmation of save state load (Max 80s)..."
       
       WAIT_COUNT=0
       MAX_COUNT=800  # 800 iterations * 0.1s sleep = 80 seconds max wait
@@ -95,52 +115,55 @@ launch_retroarch_from_StockUI(){
       done
 
       if [ $LOAD_CONFIRMED -eq 1 ]; then
-          echo "[PROJECT ERIS](BG-MOVE) drive2: Log confirmation found. Moving file back."
+          echo "[PROJECT ERIS](BG-MOVE) disc_launcher: Log confirmation found. Moving file back."
       else
           # Fallback: We proceed with the move after the 80s max wait to ensure prompt suppression.
-          echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: Load confirmation not found within 80s. Proceeding with fallback cleanup."
+          echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: Load confirmation not found within 80s. Proceeding with fallback cleanup."
       fi
       
       # Perform the move after polling completes (regardless of success/timeout)
       if [ -f "${TEMP_STATE_FILE}" ]; then
           mv "${TEMP_STATE_FILE}" "${ORIGINAL_STATE_FILE}"
-          echo "[PROJECT ERIS](BG-MOVE) drive2: Save state moved back."
+          echo "[PROJECT ERIS](BG-MOVE) disc_launcher: Save state moved back."
       else
-          echo "[PROJECT ERIS](BG-MOVE) drive2: Temporary state file not found."
+          echo "[PROJECT ERIS](BG-MOVE) disc_launcher: Temporary state file not found."
       fi
 
     ) & # The '&' runs this cleanup concurrently with RetroArch.
   fi
-  # --- END: drive2 BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
-  # --- START: drive2 MEMORY CARD PRE-LAUNCH SYNC ---
-  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+  # --- END: disc_launcher BACKGROUND FILE RETURN FIX (Log-Checked, Polling) ---
+  # --- START: disc_launcher MEMORY CARD PRE-LAUNCH SYNC ---
+  if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
     MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
-    SRM_PATH="${RETROARCH_PATH}/saves/${INTERCEPT_GAME_ID}.srm"
+    SRM_PATH="${RETROARCH_PATH}/saves/${RA_CONTENT_ID}.srm"
     mkdir -p "${RETROARCH_PATH}/saves"
     
-    # 1. Copy the Stock UI pooled memory card (card1.mcd) to RetroArch's save file name (drive2.srm).
+    # 1. Copy the Stock UI pooled memory card (card1.mcd) to RetroArch's save file name (disc_launcher.srm).
     # This ensures RetroArch loads the latest pooled data.
     if [ -f "${MCD_PATH}" ]; then
       cp -f "${MCD_PATH}" "${SRM_PATH}"
-      echo "[PROJECT ERIS](INFO) drive2: Copied ${MCD_PATH} to ${SRM_PATH} for launch."
+      echo "[PROJECT ERIS](INFO) disc_launcher: Copied ${MCD_PATH} to ${SRM_PATH} for launch."
     else
-      echo "[PROJECT ERIS](WARN) drive2: ${MCD_PATH} not found, starting with fresh memory card data."
+      echo "[PROJECT ERIS](WARN) disc_launcher: ${MCD_PATH} not found, starting with fresh memory card data."
     fi
     
     # 2. Create a temporary symlink in /tmp/ra_save for RetroArch to read/write during the session.
-    # This points the expected /tmp/ra_save/drive2.srm to the real save file on USB.
-    ln -sf "${SRM_PATH}" "${RA_SAVE_PATH}/${INTERCEPT_GAME_ID}.srm"
+    # This points the expected /tmp/ra_save/disc_launcher.srm to the real save file on USB.
+    ln -sf "${SRM_PATH}" "${RA_SAVE_PATH}/${RA_CONTENT_ID}.srm"
+    if [ "${RA_CONTENT_ID}" != "${INTERCEPT_GAME_ID}" ]; then
+      ln -sf "${SRM_PATH}" "${RA_SAVE_PATH}/${INTERCEPT_GAME_ID}.srm"
+    fi
   fi
-  # --- END: drive2 MEMORY CARD PRE-LAUNCH SYNC ---
+  # --- END: disc_launcher MEMORY CARD PRE-LAUNCH SYNC ---
   "${PROJECT_ERIS_PATH}/etc/project_eris/SUP/scripts/ra_launch.sh" -v -L "${RETROARCH_PATH}/config/retroarch/cores/${1}" "${INTERCEPT_GAME_PATH}" ${2}
   echo "[PROJECT ERIS](INFO) RetroArch exit code $?"
 v
-  # --- START: drive2 DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
+  # --- START: disc_launcher DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
   # When disc is ejected / swapped, libretro logs "CD-ROM EXE Name: SLES_024.70;1"
-  # Use that to refresh /tmp/drive2.system.cnf.current (1-line serial text).
-  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+  # Use that to refresh /tmp/disc_launcher.system.cnf.current (1-line serial text).
+  if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
     LOG_FILE="${RUNTIME_LOG_PATH}/retroarch.log"
-    DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+    disc_launcher_TMP_CNF="/tmp/disc_launcher.system.cnf.current"
 
     if [ -f "${LOG_FILE}" ]; then
       # Always take the LAST occurrence in the log (multiple can exist from boot + swaps)
@@ -150,24 +173,24 @@ v
       EXIT_SERIAL="$(echo "${EXIT_SERIAL}" | tr 'a-z' 'A-Z' | tr -d '\r\n ' )"
 
       if [ -n "${EXIT_SERIAL}" ]; then
-        TMP_CUR="${DRIVE2_TMP_CNF}.tmp.$$"
+        TMP_CUR="${disc_launcher_TMP_CNF}.tmp.$$"
         echo "${EXIT_SERIAL}" > "${TMP_CUR}" 2>/dev/null
         sync
-        mv -f "${TMP_CUR}" "${DRIVE2_TMP_CNF}" 2>/dev/null
+        mv -f "${TMP_CUR}" "${disc_launcher_TMP_CNF}" 2>/dev/null
         sync
-        echo "[PROJECT ERIS](INFO) drive2: refreshed DISC SERIAL from log -> ${DRIVE2_TMP_CNF} (${EXIT_SERIAL})"
+        echo "[PROJECT ERIS](INFO) disc_launcher: refreshed DISC SERIAL from log -> ${disc_launcher_TMP_CNF} (${EXIT_SERIAL})"
       else
-        echo "[PROJECT ERIS](WARN) drive2: could not parse DISC SERIAL from retroarch.log on exit"
+        echo "[PROJECT ERIS](WARN) disc_launcher: could not parse DISC SERIAL from retroarch.log on exit"
       fi
 
       # Cleanliness / edge-case hardening: remove the session log after extracting data
       rm -f "${LOG_FILE}" 2>/dev/null
       sync
     else
-      echo "[PROJECT ERIS](WARN) drive2: retroarch.log missing on exit; cannot refresh DISC SERIAL"
+      echo "[PROJECT ERIS](WARN) disc_launcher: retroarch.log missing on exit; cannot refresh DISC SERIAL"
     fi
   fi
-  # --- END: drive2 DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
+  # --- END: disc_launcher DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
 
   save_ra_savestates
   rm -fr "/tmp/ra_cache"
@@ -176,20 +199,21 @@ v
 exit_checkSaveState(){
   START=$(date +%s%N)
   echo "[PROJECT ERIS](INFO) checking for auto save state on retroarch exit"
-  # --- START: drive2 MEMORY CARD POST-EXIT SYNC (MOVED TO START) ---
-  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+  RA_CONTENT_ID="$(get_ra_content_id)"
+  # --- START: disc_launcher MEMORY CARD POST-EXIT SYNC (MOVED TO START) ---
+  if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
     MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
-    SRM_PATH="${RETROARCH_PATH}/saves/${INTERCEPT_GAME_ID}.srm"
+    SRM_PATH="${RETROARCH_PATH}/saves/${RA_CONTENT_ID}.srm"
     
-    # Copy RetroArch's save file (drive2.srm) back to the Stock UI pooled memory card (card1.mcd)
+    # Copy RetroArch's save file (disc_launcher.srm) back to the Stock UI pooled memory card (card1.mcd)
     if [ -f "${SRM_PATH}" ]; then
       cp -f "${SRM_PATH}" "${MCD_PATH}"
-      echo "[PROJECT ERIS](INFO) drive2: Copied ${SRM_PATH} back to ${MCD_PATH} for UI update."
+      echo "[PROJECT ERIS](INFO) disc_launcher: Copied ${SRM_PATH} back to ${MCD_PATH} for UI update."
     else
-      echo "[PROJECT ERIS](WARN) drive2: ${SRM_PATH} not found after exit."
+      echo "[PROJECT ERIS](WARN) disc_launcher: ${SRM_PATH} not found after exit."
     fi
   fi
-  # --- END: drive2 MEMORY CARD POST-EXIT SYNC ---
+  # --- END: disc_launcher MEMORY CARD POST-EXIT SYNC ---
   # An auto save state is created automatically, but what if the game disc was changed since
   # retroarch was originally launched. Check that the last saved state matches the ID of the launching
   # game
@@ -202,6 +226,9 @@ exit_checkSaveState(){
   fi
   RA_LAST_GAME="${RA_LAST_GAME##*/}"          # Remove leading directories
   RA_LAST_GAME="${RA_LAST_GAME%.state.auto}"  # Remove trailing file extension .state.auto
+  if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ] && [ "${RA_LAST_GAME}" = "${RA_CONTENT_ID}" ]; then
+    RA_LAST_GAME="${INTERCEPT_GAME_ID}"
+  fi
   if [ ! "${RA_LAST_GAME}" = "${INTERCEPT_GAME_ID}" ]; then
     #  The last save state was for a different game, check if this disc belongs to the launching game
     #  If it does then a disc swap has occured, so update the game ids so the correct save state
@@ -217,7 +244,7 @@ exit_checkSaveState(){
     fi
   fi
   #  Check if an auto save state exists and then move it to the correct location for ui_menu to handle
-  if [ -f "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto" ]; then
+  if [ -f "${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto" ]; then
     echo "[PROJECT ERIS](INFO) an auto save state exists"
     #  Create filename.txt
     echo "${INTERCEPT_GAME_PATH}" > "/data/AppData/sony/pcsx/.pcsx/filename.txt"
@@ -226,17 +253,27 @@ exit_checkSaveState(){
     mkdir -p "/data/AppData/sony/pcsx/.pcsx/sstates"
     mkdir -p "/data/AppData/sony/pcsx/.pcsx/screenshots"
     #  Move save state files
-    mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+    mv "${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto" "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000"
+    if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ] && [ "${RA_CONTENT_ID}" != "${INTERCEPT_GAME_ID}" ]; then
+      cp -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000" "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000"
+      if [ -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" ]; then
+        cp -f "/data/AppData/sony/pcsx/.pcsx/sstates/${INTERCEPT_GAME_ID}.000.res" "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000.res"
+      fi
+      # Clean up driveN leftovers so only disc_launcher is visible in UI.
+      rm -f "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000" \
+            "/data/AppData/sony/pcsx/.pcsx/sstates/${RA_CONTENT_ID}.000.res" \
+            "/data/AppData/sony/pcsx/.pcsx/screenshots/${RA_CONTENT_ID}.png" 2>/dev/null
+    fi
 
-# --- START: drive2 SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
-if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+# --- START: disc_launcher SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
+if [ "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
   (
     # Resolve volatile .pcsx symlink to a real path (prevents ui_menu resume from breaking watchers)
     PCSX_LINK="/data/AppData/sony/pcsx/.pcsx"
     PCSX_REAL="$(readlink -f "${PCSX_LINK}" 2>/dev/null)"
 
     if [ -z "${PCSX_REAL}" ] || [ ! -d "${PCSX_REAL}" ]; then
-      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: .pcsx real path not available yet; waiting briefly..."
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: .pcsx real path not available yet; waiting briefly..."
       t=0
       while [ $t -lt 100 ]; do  # 10s @ 0.1s
         PCSX_REAL="$(readlink -f "${PCSX_LINK}" 2>/dev/null)"
@@ -247,25 +284,25 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
     fi
 
     if [ -z "${PCSX_REAL}" ] || [ ! -d "${PCSX_REAL}" ]; then
-      echo "[PROJECT ERIS](BG-MONITOR)(ERROR) drive2: could not resolve .pcsx real path; aborting reference capture"
+      echo "[PROJECT ERIS](BG-MONITOR)(ERROR) disc_launcher: could not resolve .pcsx real path; aborting reference capture"
       exit 0
     fi
 
     SSTATES_DIR="${PCSX_REAL}/sstates"
-    PLACEHOLDER="${SSTATES_DIR}/drive2.000"
-    RES_FILE="${SSTATES_DIR}/drive2.000.res"
-    REF_FILE="${SSTATES_DIR}/drive2.system.cnf"
+    PLACEHOLDER="${SSTATES_DIR}/disc_launcher.000"
+    RES_FILE="${SSTATES_DIR}/disc_launcher.000.res"
+    REF_FILE="${SSTATES_DIR}/disc_launcher.system.cnf"
     # Prefer the stable snapshot created during launch (works even if /tmp/cdrom is stale)
-    DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+    disc_launcher_TMP_CNF="/tmp/disc_launcher.system.cnf.current"
 
     copy_ref_cnf() {
-      if [ -f "${DRIVE2_TMP_CNF}" ]; then
+      if [ -f "${disc_launcher_TMP_CNF}" ]; then
         TMP_REF="${REF_FILE}.tmp.$$"
-        cp -f "${DRIVE2_TMP_CNF}" "${TMP_REF}"
+        cp -f "${disc_launcher_TMP_CNF}" "${TMP_REF}"
         sync
         mv -f "${TMP_REF}" "${REF_FILE}"
         sync
-        echo "[PROJECT ERIS](BG-MONITOR) drive2: copied DISC SERIAL snapshot (${DRIVE2_TMP_CNF}) to ${REF_FILE}"
+        echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: copied DISC SERIAL snapshot (${disc_launcher_TMP_CNF}) to ${REF_FILE}"
         return 0
       fi
 
@@ -279,12 +316,12 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
           sync
           mv -f "${TMP_REF}" "${REF_FILE}"
           sync
-          echo "[PROJECT ERIS](BG-MONITOR) drive2: copied DISC SERIAL (fallback mount) to ${REF_FILE}"
+          echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: copied DISC SERIAL (fallback mount) to ${REF_FILE}"
           return 0
         fi
       fi
 
-      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: SYSTEM.CNF not available (no snapshot, no mount); not copying"
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: SYSTEM.CNF not available (no snapshot, no mount); not copying"
       return 1
     }
 
@@ -300,10 +337,10 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
     fi
 
     ############################################################
-    # CASE 1: drive2.000.res is FIRST CREATED (didn't exist -> exists)
+    # CASE 1: disc_launcher.000.res is FIRST CREATED (didn't exist -> exists)
     ############################################################
     if [ "${RES_EXISTED}" -eq 0 ]; then
-      echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE1 waiting for first creation of ${RES_FILE}..."
+      echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: CASE1 waiting for first creation of ${RES_FILE}..."
 
       i=0
       while [ $i -lt 1800 ]; do  # 180s @ 0.1s
@@ -332,15 +369,15 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
         i=$((i+1))
       done
 
-      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE1 ${RES_FILE} never appeared (user likely hit NO)"
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: CASE1 ${RES_FILE} never appeared (user likely hit NO)"
       exit 0
     fi
 
     ############################################################
-    # CASE 2: drive2.000.res EXISTS and is UPDATED
+    # CASE 2: disc_launcher.000.res EXISTS and is UPDATED
     # Wait for placeholder appear -> disappear, then require .res updated
     ############################################################
-    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 waiting for placeholder ${PLACEHOLDER} to APPEAR..."
+    echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: CASE2 waiting for placeholder ${PLACEHOLDER} to APPEAR..."
 
     i=0
     while [ $i -lt 1800 ]; do  # 180s @ 0.1s
@@ -349,11 +386,11 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
       i=$((i+1))
     done
     if [ ! -f "${PLACEHOLDER}" ]; then
-      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 placeholder never appeared (user likely hit NO)"
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: CASE2 placeholder never appeared (user likely hit NO)"
       exit 0
     fi
 
-    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 placeholder appeared; waiting for it to DISAPPEAR..."
+    echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: CASE2 placeholder appeared; waiting for it to DISAPPEAR..."
 
     i=0
     while [ $i -lt 1800 ]; do  # 180s @ 0.1s
@@ -362,11 +399,11 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
       i=$((i+1))
     done
     if [ -f "${PLACEHOLDER}" ]; then
-      echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 placeholder never disappeared; not copying"
+      echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: CASE2 placeholder never disappeared; not copying"
       exit 0
     fi
 
-    echo "[PROJECT ERIS](BG-MONITOR) drive2: CASE2 placeholder disappeared; waiting for ${RES_FILE} to be UPDATED..."
+    echo "[PROJECT ERIS](BG-MONITOR) disc_launcher: CASE2 placeholder disappeared; waiting for ${RES_FILE} to be UPDATED..."
 
     UPDATED=0
     i=0
@@ -395,14 +432,14 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
       exit 0
     fi
 
-    echo "[PROJECT ERIS](BG-MONITOR)(WARN) drive2: CASE2 ${RES_FILE} did not update within window; not copying"
+    echo "[PROJECT ERIS](BG-MONITOR)(WARN) disc_launcher: CASE2 ${RES_FILE} did not update within window; not copying"
     exit 0
   ) &
 fi
-# --- END: drive2 SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
+# --- END: disc_launcher SAVE-STATE DISC REFERENCE CAPTURE (2-case create vs update) ---
 
-	if [ -f "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" ]; then
-		mv "${RA_SAVESTATE_PATH}/${INTERCEPT_GAME_ID}.state.auto.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
+	if [ -f "${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto.png" ]; then
+		mv "${RA_SAVESTATE_PATH}/${RA_CONTENT_ID}.state.auto.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
 	else
 		cp "${PROJECT_ERIS_PATH}/etc/project_eris/IMG/retroarch.png" "/data/AppData/sony/pcsx/.pcsx/screenshots/${INTERCEPT_GAME_ID}.png"
 	fi
@@ -432,9 +469,9 @@ link_ra_memory_cards(){
     # Set the target memory card path
     TARGET_MCD_PATH="/data/AppData/sony/pcsx/.pcsx/memcards/card1.mcd"
     
-    # Only link to card1.mcd if it's NOT the drive2 ID.
-    # We will handle drive2 via a copy/sync operation for guaranteed stability and UI visibility.
-    if [ ! "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+    # Only link to card1.mcd if it's NOT the disc_launcher ID.
+    # We will handle disc_launcher via a copy/sync operation for guaranteed stability and UI visibility.
+    if [ ! "${INTERCEPT_GAME_ID}" = "disc_launcher" ]; then
       ln -sf "${TARGET_MCD_PATH}" "${RA_SAVE_PATH}/${INTERCEPT_GAME_ID}.srm"
     fi
     # RetroArch creates a memory card per game, which means all possible game discs need to be linked back to
@@ -460,7 +497,8 @@ link_ra_savestates(){
   # launched from the Stock UI
   START=$(date +%s%N)
   echo "[PROJECT ERIS](INFO) linking other RetroArch save states into temporary location"
-  find "${RETROARCH_PATH}/savestates/" -name "${INTERCEPT_GAME_ID}.state*" -a ! -name "${INTERCEPT_GAME_ID}.state.*" -maxdepth 1 -type f -exec ln -sf "{}" "${RA_SAVESTATE_PATH}" +
+  RA_CONTENT_ID="$(get_ra_content_id)"
+  find "${RETROARCH_PATH}/savestates/" -name "${RA_CONTENT_ID}.state*" -a ! -name "${RA_CONTENT_ID}.state.*" -maxdepth 1 -type f -exec ln -sf "{}" "${RA_SAVESTATE_PATH}" +
   END=$(date +%s%N)
   echo "[PROJECT ERIS](PROFILE) link_ra_save_states took: $(((END-START)/1000000))ms to execute"
 }

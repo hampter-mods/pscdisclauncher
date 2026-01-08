@@ -38,7 +38,7 @@ sdl_text "Scanning transfer directory for games..."
 
 RET=$?
 
-# --- Inject Game.ini into any transferred drive2 launcher directories (only for our serial) ---
+# --- Inject Game.ini into any transferred disc_launcher launcher directories (only for our serial) ---
 if [ "$RET" -eq 0 ]; then
   TLOG="${RUNTIME_LOG_PATH}/transfer.log"
   SRC_INI="${PROJECT_ERIS_PATH}/opt/psc_transfer_tools/Game.ini"
@@ -52,7 +52,7 @@ if [ "$RET" -eq 0 ]; then
         [ -d "$d" ] || continue
 
         # Detect a disc launcher folder by its assets
-        if [ -f "$d/drive2.cue" ] && [ -f "$d/drive2.bin" ] && [ -f "$d/drive2.png" ]; then
+        if [ -f "$d/disc_launcher.cue" ] && [ -f "$d/disc_launcher.bin" ] && [ -f "$d/disc_launcher.png" ]; then
           # Only inject if missing (so each instance keeps its own state)
           if [ ! -f "$d/Game.ini" ]; then
             cp -f "$SRC_INI" "$d/Game.ini" 2>/dev/null || true

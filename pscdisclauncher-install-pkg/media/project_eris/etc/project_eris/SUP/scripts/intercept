@@ -604,10 +604,39 @@ if [ "${LAUNCH_RA_FROM_STOCK_UI}" = "1" ] || [ "${RA_GAME}" = true ]; then
 
     echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: disc passed SYSTEM.CNF checks at ${MOUNT_PT}, continuing to RetroArch"
 
-# --- START: drive2 CURRENT DISC SYSTEM.CNF SNAPSHOT (/tmp) ---
-# Capture the validated SYSTEM.CNF into a stable temp location so later logic
+# --- START: drive2 CURRENT DISC SERIAL SNAPSHOT (/tmp) ---
+# Store ONLY the disc serial (1-line text) into a stable temp location so later logic
 # (save-state confirm pipeline) can use it even if /tmp/cdrom becomes stale.
 DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+
+extract_drive2_serial_from_cnf() {
+  # Extracts serial from SYSTEM.CNF BOOT line, normalizes to UPPERCASE.
+  # Handles paths like: BOOT = cdrom:\SLES_024.70;1  OR cdrom:\SLUS_123.45\GAME.EXE;1
+  local cnf="$1"
+  local s=""
+
+  [ -f "$cnf" ] || return 1
+
+  # Prefer BOOT line parsing
+  s="$(grep -i '^BOOT' "$cnf" 2>/dev/null | head -n 1 \
+      | sed -e 's/.*cdrom:[\\\/]*//I' -e 's/;.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+  # If BOOT points to a path, keep only the first component / base token
+  s="${s##*/}"
+  s="${s##*\\}"
+
+  # Fallback: pull first match like SLES_024.70 / SLUS_123.45 / SCUS_123.45 etc
+  if [ -z "$s" ]; then
+    s="$(grep -oEi '[A-Z]{4}_[0-9]{3}\.[0-9]{2}' "$cnf" 2>/dev/null | head -n 1)"
+  fi
+
+  # Normalize
+  s="$(echo "$s" | tr 'a-z' 'A-Z' | tr -d '\r\n ' )"
+
+  [ -n "$s" ] || return 1
+  echo "$s"
+  return 0
+}
 
 # Ensure SYSTEM_CNF is populated (case-insensitive)
 if [ -z "${SYSTEM_CNF}" ]; then
@@ -615,50 +644,62 @@ if [ -z "${SYSTEM_CNF}" ]; then
 fi
 
 if [ -n "${SYSTEM_CNF}" ] && [ -f "${SYSTEM_CNF}" ]; then
-  TMP_CUR="${DRIVE2_TMP_CNF}.tmp.$$"
-  cp -f "${SYSTEM_CNF}" "${TMP_CUR}" 2>/dev/null
-  sync
-  mv -f "${TMP_CUR}" "${DRIVE2_TMP_CNF}" 2>/dev/null
-  sync
-  echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: snapshotted SYSTEM.CNF to ${DRIVE2_TMP_CNF}"
+  CUR_SERIAL="$(extract_drive2_serial_from_cnf "${SYSTEM_CNF}")"
+  if [ -n "${CUR_SERIAL}" ]; then
+    TMP_CUR="${DRIVE2_TMP_CNF}.tmp.$$"
+    echo "${CUR_SERIAL}" > "${TMP_CUR}" 2>/dev/null
+    sync
+    mv -f "${TMP_CUR}" "${DRIVE2_TMP_CNF}" 2>/dev/null
+    sync
+    echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: snapshotted DISC SERIAL to ${DRIVE2_TMP_CNF} (${CUR_SERIAL})"
+  else
+    echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: could not extract DISC SERIAL from SYSTEM.CNF at ${MOUNT_PT}"
+  fi
 else
-  echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: could not snapshot SYSTEM.CNF (not found) at ${MOUNT_PT}"
+  echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: could not read SYSTEM.CNF (not found) at ${MOUNT_PT}"
 fi
-# --- END: drive2 CURRENT DISC SYSTEM.CNF SNAPSHOT (/tmp) ---
+# --- END: drive2 CURRENT DISC SERIAL SNAPSHOT (/tmp) ---
 
 # --- START: drive2 SAVE-STATE DISC CHECK (resume-only, no unmount) ---
 if [ "${INTERCEPT_SAVE_STATE}" = true ] && [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
   # Stored reference copied when the savestate was confirmed/converted by the UI.
+  # NOTE: This file now contains ONLY the DISC SERIAL (1-line text), not full SYSTEM.CNF.
   DRIVE2_REF_CNF="/data/AppData/sony/pcsx/.pcsx/sstates/drive2.system.cnf"
 
-  # Current disc SYSTEM.CNF (any case) – SYSTEM_CNF was discovered earlier in this mount routine.
-  # If for any reason SYSTEM_CNF is empty here, re-find it.
+  # Ensure SYSTEM_CNF is available (for extracting current serial)
   if [ -z "${SYSTEM_CNF}" ]; then
     SYSTEM_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
   fi
 
-  # Wait briefly for drive2.system.cnf to appear (background capture may still be finishing)
+  # Wait briefly for reference serial file to appear (background capture may still be finishing)
   WAIT_REF=0
   while [ ! -f "${DRIVE2_REF_CNF}" ] && [ $WAIT_REF -lt 80 ]; do
     usleep 100000  # 0.1s
     WAIT_REF=$((WAIT_REF + 1))
   done
 
-  # Re-find SYSTEM.CNF just in case mount was reused and SYSTEM_CNF wasn't set
+  # Re-find SYSTEM.CNF just in case
   if [ -z "${SYSTEM_CNF}" ]; then
     SYSTEM_CNF="$(find "${MOUNT_PT}" -maxdepth 1 -iname 'system.cnf' 2>/dev/null | head -n 1)"
   fi
 
   if [ -f "${DRIVE2_REF_CNF}" ] && [ -n "${SYSTEM_CNF}" ] && [ -f "${SYSTEM_CNF}" ]; then
-    if ! cmp -s "${DRIVE2_REF_CNF}" "${SYSTEM_CNF}" 2>/dev/null; then
-      echo "[PROJECT ERIS](INTERCEPT)(ERROR) drive2: wrong disc for savestate resume (SYSTEM.CNF mismatch)"
-      # IMPORTANT: do NOT umount or delete ${MOUNT_PT}. Let the user swap quickly.
-      resume_ui_menu
-      show_drive2_wrong_disc_screen
-      echo -n 1 > "/data/power/disable"
-      exit 0
+    REF_SERIAL="$(cat "${DRIVE2_REF_CNF}" 2>/dev/null | tr 'a-z' 'A-Z' | tr -d '\r\n ' )"
+    CUR_SERIAL="$(extract_drive2_serial_from_cnf "${SYSTEM_CNF}" 2>/dev/null | tr 'a-z' 'A-Z' | tr -d '\r\n ' )"
+
+    if [ -n "${REF_SERIAL}" ] && [ -n "${CUR_SERIAL}" ]; then
+      if [ "${REF_SERIAL}" != "${CUR_SERIAL}" ]; then
+        echo "[PROJECT ERIS](INTERCEPT)(ERROR) drive2: wrong disc for savestate resume (SERIAL mismatch: ref=${REF_SERIAL}, cur=${CUR_SERIAL})"
+        # IMPORTANT: do NOT umount or delete ${MOUNT_PT}. Let the user swap quickly.
+        resume_ui_menu
+        show_drive2_wrong_disc_screen
+        echo -n 1 > "/data/power/disable"
+        exit 0
+      fi
+      echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: savestate resume disc check passed (SERIAL ${CUR_SERIAL})"
+    else
+      echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: savestate resume disc check skipped (empty serial ref/cur)"
     fi
-    echo "[PROJECT ERIS](INTERCEPT)(INFO) drive2: savestate resume disc check passed"
   else
     echo "[PROJECT ERIS](INTERCEPT)(WARN) drive2: savestate resume disc check skipped (ref or SYSTEM.CNF still missing after wait)"
   fi

@@ -134,6 +134,41 @@ launch_retroarch_from_StockUI(){
   # --- END: drive2 MEMORY CARD PRE-LAUNCH SYNC ---
   "${PROJECT_ERIS_PATH}/etc/project_eris/SUP/scripts/ra_launch.sh" -v -L "${RETROARCH_PATH}/config/retroarch/cores/${1}" "${INTERCEPT_GAME_PATH}" ${2}
   echo "[PROJECT ERIS](INFO) RetroArch exit code $?"
+v
+  # --- START: drive2 DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
+  # When disc is ejected / swapped, libretro logs "CD-ROM EXE Name: SLES_024.70;1"
+  # Use that to refresh /tmp/drive2.system.cnf.current (1-line serial text).
+  if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
+    LOG_FILE="${RUNTIME_LOG_PATH}/retroarch.log"
+    DRIVE2_TMP_CNF="/tmp/drive2.system.cnf.current"
+
+    if [ -f "${LOG_FILE}" ]; then
+      # Always take the LAST occurrence in the log (multiple can exist from boot + swaps)
+      LAST_LINE="$(awk 'BEGIN{IGNORECASE=1} /CD-ROM EXE Name:/{line=$0} END{print line}' "${LOG_FILE}" 2>/dev/null)"
+      EXIT_SERIAL="$(echo "${LAST_LINE}" \
+        | sed -e 's/.*CD-ROM EXE Name:[[:space:]]*//I' -e 's/;.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' )"
+      EXIT_SERIAL="$(echo "${EXIT_SERIAL}" | tr 'a-z' 'A-Z' | tr -d '\r\n ' )"
+
+      if [ -n "${EXIT_SERIAL}" ]; then
+        TMP_CUR="${DRIVE2_TMP_CNF}.tmp.$$"
+        echo "${EXIT_SERIAL}" > "${TMP_CUR}" 2>/dev/null
+        sync
+        mv -f "${TMP_CUR}" "${DRIVE2_TMP_CNF}" 2>/dev/null
+        sync
+        echo "[PROJECT ERIS](INFO) drive2: refreshed DISC SERIAL from log -> ${DRIVE2_TMP_CNF} (${EXIT_SERIAL})"
+      else
+        echo "[PROJECT ERIS](WARN) drive2: could not parse DISC SERIAL from retroarch.log on exit"
+      fi
+
+      # Cleanliness / edge-case hardening: remove the session log after extracting data
+      rm -f "${LOG_FILE}" 2>/dev/null
+      sync
+    else
+      echo "[PROJECT ERIS](WARN) drive2: retroarch.log missing on exit; cannot refresh DISC SERIAL"
+    fi
+  fi
+  # --- END: drive2 DISC SERIAL REFRESH ON RETROARCH EXIT (from log) ---
+
   save_ra_savestates
   rm -fr "/tmp/ra_cache"
 }
@@ -230,7 +265,7 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
         sync
         mv -f "${TMP_REF}" "${REF_FILE}"
         sync
-        echo "[PROJECT ERIS](BG-MONITOR) drive2: copied SYSTEM.CNF snapshot (${DRIVE2_TMP_CNF}) to ${REF_FILE}"
+        echo "[PROJECT ERIS](BG-MONITOR) drive2: copied DISC SERIAL snapshot (${DRIVE2_TMP_CNF}) to ${REF_FILE}"
         return 0
       fi
 
@@ -244,7 +279,7 @@ if [ "${INTERCEPT_GAME_ID}" = "drive2" ]; then
           sync
           mv -f "${TMP_REF}" "${REF_FILE}"
           sync
-          echo "[PROJECT ERIS](BG-MONITOR) drive2: copied SYSTEM.CNF (fallback mount) to ${REF_FILE}"
+          echo "[PROJECT ERIS](BG-MONITOR) drive2: copied DISC SERIAL (fallback mount) to ${REF_FILE}"
           return 0
         fi
       fi

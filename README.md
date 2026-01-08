@@ -50,14 +50,8 @@ If you are **not using internal USB mods**:
 
 Before using this:
 
-1. In Project Eris settings, enable:  
+ In Project Eris settings, enable:  
    **“Launch RetroArch games from stock UI”**
-
-2. USB order **matters**:
-   - The **Project Eris USB must be connected first**
-   - The **external disc drive must be connected after it**
-
-This ensures Eris mounts correctly before the drive.
 
 ---
 

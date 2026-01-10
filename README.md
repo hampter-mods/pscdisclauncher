@@ -17,6 +17,15 @@
 
 ---
 
+## Credits and References
+
+- **Creator of the PCSX-ReARMed DiscProject core for the PlayStation Classic:** https://www.youtube.com/watch?v=i0kzkb9p6WQ
+- **Project Eris GitHub:** https://github.com/ProjectEris/ProjectEris
+- **PCSX-ReARMed core:** https://github.com/libretro/pcsx_rearmed
+- **GNU General Public License:** https://www.gnu.org/licenses/gpl-3.0.html
+
+---
+
 ## Download
 
 Ready-to-use **Project Eris `.mod` files** (recommended):
@@ -378,14 +387,6 @@ This project is actively evolving. Planned improvements include:
 - **Per-game memory card and save-state slots**
   - Per-game virtual memory cards
   - Per-game save-state namespaces
-
----
-
-## References
-
-- **Project Eris GitHub:** https://github.com/ProjectEris/ProjectEris
-- **PCSX-ReARMed DiscProject core:** https://github.com/libretro/pcsx_rearmed
-- **GNU General Public License:** https://www.gnu.org/licenses/gpl-3.0.html
 
 ---
 

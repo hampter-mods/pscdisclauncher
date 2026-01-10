@@ -20,7 +20,7 @@
 ## Credits and References
 
 - **Creator of the PCSX-ReARMed DiscProject core for the PlayStation Classic:** https://www.youtube.com/watch?v=i0kzkb9p6WQ
-- **Project Eris GitHub:** https://github.com/ProjectEris/ProjectEris
+- **Project Eris:** https://modmyclassic.com/
 - **PCSX-ReARMed core:** https://github.com/libretro/pcsx_rearmed
 - **GNU General Public License:** https://www.gnu.org/licenses/gpl-3.0.html
 
